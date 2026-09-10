@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Property } from "@/lib/types";
-import { dbDeleteProperty, dbUpsertProperty, isSupabaseConfigured } from "@/lib/supabase";
+import { dbDeleteProperty, dbUpsertProperty, isAdminDatabaseConfigured } from "@/lib/supabase";
 import { getAllProperties } from "@/lib/data";
 import { parsePropertyForm } from "@/lib/property-form";
 
@@ -13,10 +13,10 @@ export async function savePropertyAction(
   _prev: SaveState,
   formData: FormData
 ): Promise<SaveState> {
-  if (!isSupabaseConfigured()) {
+  if (!isAdminDatabaseConfigured()) {
     return {
       error:
-        "Saving requires Supabase. Connect the database (NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY) to enable edits.",
+        "Saving needs the server database key. Set SUPABASE_SERVICE_ROLE_KEY (Supabase dashboard → Settings → API) alongside NEXT_PUBLIC_SUPABASE_URL, then restart the server.",
     };
   }
 
@@ -51,7 +51,7 @@ export async function savePropertyAction(
 }
 
 export async function deletePropertyAction(formData: FormData) {
-  if (!isSupabaseConfigured()) return;
+  if (!isAdminDatabaseConfigured()) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await dbDeleteProperty(id);
@@ -60,7 +60,7 @@ export async function deletePropertyAction(formData: FormData) {
 }
 
 export async function duplicatePropertyAction(formData: FormData) {
-  if (!isSupabaseConfigured()) return;
+  if (!isAdminDatabaseConfigured()) return;
   const id = String(formData.get("id") ?? "");
   const all = await getAllProperties();
   const source = all.find((p) => p.id === id);

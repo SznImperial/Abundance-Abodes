@@ -234,7 +234,7 @@ export function ImageUploader({
           )}
         >
           <input
-            ref={items.length === 0 ? inputRef : undefined}
+            ref={inputRef}
             type="file"
             accept=".jpg,.jpeg,.png,.webp"
             {...(multiple ? { multiple: true } : {})}

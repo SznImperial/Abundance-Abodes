@@ -1,11 +1,24 @@
-import { isSupabaseConfigured } from "@/lib/supabase";
+import { isAdminDatabaseConfigured, isSupabaseConfigured } from "@/lib/supabase";
 
 /** Shared banner explaining the data backend state in admin screens. */
 export function SupabaseBanner() {
-  if (isSupabaseConfigured()) {
+  if (isAdminDatabaseConfigured()) {
     return (
       <div className="mb-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
         Connected to Supabase — changes are saved to the live database.
+      </div>
+    );
+  }
+  if (isSupabaseConfigured()) {
+    return (
+      <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-800">
+        <strong className="font-semibold">Reads only:</strong> the public
+        Supabase credentials are set, but saves need the server-only{" "}
+        <code className="rounded bg-brand-forest/10 px-1.5 py-0.5 font-mono text-xs">
+          SUPABASE_SERVICE_ROLE_KEY
+        </code>{" "}
+        (Supabase dashboard → Settings → API). Add it to the environment and
+        restart the server to enable editing.
       </div>
     );
   }

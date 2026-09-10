@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAllProperties } from "@/lib/data";
-import { isSupabaseConfigured } from "@/lib/supabase";
+import { isAdminDatabaseConfigured } from "@/lib/supabase";
 import { SupabaseBanner } from "@/components/admin/SupabaseBanner";
 import {
   deletePropertyAction,
@@ -97,11 +97,11 @@ export default async function AdminPropertiesPage({
                       <input type="hidden" name="id" value={property.id} />
                       <button
                         type="submit"
-                        disabled={!isSupabaseConfigured()}
+                        disabled={!isAdminDatabaseConfigured()}
                         title={
-                          isSupabaseConfigured()
+                          isAdminDatabaseConfigured()
                             ? "Duplicate this property"
-                            : "Requires Supabase connection"
+                            : "Requires the server database key (SUPABASE_SERVICE_ROLE_KEY)"
                         }
                         className="rounded-lg border border-brand-stone/60 px-3 py-1.5 text-xs font-semibold text-brand-forest transition-colors hover:bg-brand-sand/50 disabled:opacity-40"
                       >
@@ -112,11 +112,11 @@ export default async function AdminPropertiesPage({
                       <input type="hidden" name="id" value={property.id} />
                       <button
                         type="submit"
-                        disabled={!isSupabaseConfigured()}
+                        disabled={!isAdminDatabaseConfigured()}
                         title={
-                          isSupabaseConfigured()
+                          isAdminDatabaseConfigured()
                             ? "Delete this property"
-                            : "Requires Supabase connection"
+                            : "Requires the server database key (SUPABASE_SERVICE_ROLE_KEY)"
                         }
                         className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-50 disabled:opacity-40"
                       >

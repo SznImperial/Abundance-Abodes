@@ -117,6 +117,12 @@ create table if not exists public.site_content (
 -- Public site reads via anon key; writes only for authenticated
 -- admin users. Create an admin user under Authentication and add
 -- their id to the admins table below.
+--
+-- NOTE: the Next.js app itself does NOT write with the anon key. Its
+-- admin dashboard uses its own session cookie and performs all writes
+-- server-side with SUPABASE_SERVICE_ROLE_KEY (which bypasses RLS), so
+-- these policies are a second layer of defence for direct API access
+-- rather than the mechanism the app depends on.
 -- ============================================================
 
 alter table public.properties   enable row level security;

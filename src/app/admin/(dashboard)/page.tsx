@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAllProperties } from "@/lib/data";
-import { dbListEnquiries, isSupabaseConfigured } from "@/lib/supabase";
+import { dbListEnquiries, isAdminDatabaseConfigured } from "@/lib/supabase";
 import { seedProperties } from "@/lib/data/properties";
 import { insights } from "@/lib/data/content";
 import { SupabaseBanner } from "@/components/admin/SupabaseBanner";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminDashboard() {
   const properties = await getAllProperties();
-  const enquiries = isSupabaseConfigured() ? await dbListEnquiries() : null;
+  const enquiries = isAdminDatabaseConfigured() ? await dbListEnquiries() : null;
   const newEnquiries = enquiries?.filter((e) => e.status === "new").length ?? 0;
 
   const stats = [
@@ -107,7 +107,7 @@ export default async function AdminDashboard() {
             <li className="flex justify-between">
               Enquiry inbox:{" "}
               <strong className="text-brand-forest">
-                {isSupabaseConfigured() ? (enquiries ? `${enquiries.length} stored` : "unavailable") : "connects with Supabase"}
+                {isAdminDatabaseConfigured() ? (enquiries ? `${enquiries.length} stored` : "unavailable") : "connects with Supabase"}
               </strong>
             </li>
           </ul>

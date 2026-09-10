@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { dbListEnquiries, isSupabaseConfigured } from "@/lib/supabase";
+import { dbListEnquiries, isAdminDatabaseConfigured } from "@/lib/supabase";
 import { SupabaseBanner } from "@/components/admin/SupabaseBanner";
 import { updateEnquiryStatusAction } from "./actions";
 import type { EnquiryStatus } from "@/lib/types";
@@ -17,7 +17,7 @@ const statusStyles: Record<EnquiryStatus, string> = {
 const statuses: EnquiryStatus[] = ["new", "contacted", "in-progress", "completed"];
 
 export default async function AdminEnquiriesPage() {
-  const enquiries = isSupabaseConfigured() ? await dbListEnquiries() : null;
+  const enquiries = isAdminDatabaseConfigured() ? await dbListEnquiries() : null;
 
   return (
     <div>
@@ -28,13 +28,15 @@ export default async function AdminEnquiriesPage() {
         <SupabaseBanner />
       </div>
 
-      {!isSupabaseConfigured() || !enquiries ? (
+      {!isAdminDatabaseConfigured() || !enquiries ? (
         <div className="card-surface p-10 text-center">
           <h2 className="font-serif text-xl font-semibold">No enquiries to show</h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-brand-muted">
             Consultation submissions are stored in the{" "}
             <code className="rounded bg-brand-forest/10 px-1.5 py-0.5 font-mono text-xs">enquiries</code>{" "}
-            table once Supabase is connected. Until then, requests reach the team
+            table once the server database key{" "}
+            <code className="rounded bg-brand-forest/10 px-1.5 py-0.5 font-mono text-xs">SUPABASE_SERVICE_ROLE_KEY</code>{" "}
+            is set. Until then, requests reach the team
             through email delivery (EmailJS) when configured.
           </p>
         </div>

@@ -10,6 +10,13 @@
  *
  * and every repository in src/lib/data/index.ts switches from seed data to
  * the live database without code changes.
+ *
+ * Admin writes (property saves/deletes) and the enquiry inbox do NOT use the
+ * anon key: the dashboard authenticates with its own HMAC session cookie
+ * (see src/lib/auth.ts), not Supabase Auth, so the anon key can never satisfy
+ * the admin-only RLS policies. Those helpers run exclusively on the server
+ * (server components, server actions, API routes) and use
+ * SUPABASE_SERVICE_ROLE_KEY via adminRest() instead.
  */
 import type { Enquiry, Property } from "@/lib/types";
 
@@ -25,6 +32,66 @@ function env(): { url: string; key: string } | null {
 
 export function isSupabaseConfigured(): boolean {
   return env() !== null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Privileged server access (service role)                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Server-side credentials for admin writes and the enquiry inbox.
+ *
+ * Guarded to the server (`typeof window` check) so the service role key —
+ * which bypasses Row Level Security — can never be used from the browser,
+ * even if one of these helpers were imported from client code by mistake.
+ * Every caller is a server component, server action or API route, each
+ * gated by the admin session cookie (except the public enquiry insert,
+ * whose payload is validated in src/app/api/enquiries/route.ts first).
+ */
+function serviceEnv(): { url: string; key: string } | null {
+  if (typeof window !== "undefined") return null;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return { url: url.replace(/\/$/, ""), key };
+}
+
+/** True when admin saves, deletes and the enquiry inbox can work. */
+export function isAdminDatabaseConfigured(): boolean {
+  return serviceEnv() !== null;
+}
+
+async function adminRest<T>(
+  path: string,
+  init: RequestInit & { preferRepresentation?: boolean } = {}
+): Promise<T | null> {
+  const cfg = serviceEnv();
+  if (!cfg) return null;
+
+  const headers: Record<string, string> = {
+    apikey: cfg.key,
+    Authorization: `Bearer ${cfg.key}`,
+    "Content-Type": "application/json",
+    ...(init.headers as Record<string, string> | undefined),
+  };
+  if (init.preferRepresentation) {
+    headers["Prefer"] = "return=representation";
+  }
+
+  try {
+    const res = await fetch(`${cfg.url}/rest/v1/${path}`, {
+      ...init,
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    // DELETEs answer 204 No Content: an empty body on success.
+    if (!text) return true as unknown as T;
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
 }
 
 async function rest<T>(
@@ -52,7 +119,9 @@ async function rest<T>(
     });
     if (!res.ok) return null;
     const text = await res.text();
-    return (text ? JSON.parse(text) : null) as T;
+    // DELETEs answer 204 No Content: an empty body on success.
+    if (!text) return true as unknown as T;
+    return JSON.parse(text) as T;
   } catch {
     // Network/schema issues must never take the public site down.
     return null;
@@ -177,7 +246,10 @@ export async function dbUpsertProperty(property: Property): Promise<boolean> {
     created_at: property.createdAt,
     updated_at: new Date().toISOString(),
   };
-  const result = await rest<unknown>(`properties`, {
+  // Privileged: called only from the admin server actions, which verify the
+  // HMAC session cookie first. The anon key can never satisfy the
+  // admin-only RLS policies, so this uses the service role (bypasses RLS).
+  const result = await adminRest<unknown>(`properties`, {
     method: "POST",
     body: JSON.stringify([row]),
     preferRepresentation: true,
@@ -187,7 +259,8 @@ export async function dbUpsertProperty(property: Property): Promise<boolean> {
 }
 
 export async function dbDeleteProperty(id: string): Promise<boolean> {
-  const result = await rest<unknown>(
+  // Privileged (see dbUpsertProperty): admin server actions only.
+  const result = await adminRest<unknown>(
     `properties?id=eq.${encodeURIComponent(id)}`,
     { method: "DELETE" }
   );
@@ -201,10 +274,13 @@ export async function dbDeleteProperty(id: string): Promise<boolean> {
 export type EnquiryInsertResult = "stored" | "not-writable" | "error";
 
 /**
- * Inserts an enquiry. Returns "not-writable" when the database rejects the
- * write for authorisation reasons (RLS policies not yet applied, anon key
- * lacking insert rights) so callers can treat it as setup-pending rather
- * than a hard failure.
+ * Inserts an enquiry. Called server-side from /api/enquiries, whose payload
+ * is validated before this runs. Prefers the service role (immune to a
+ * missing/misapplied insert policy) and falls back to the anon key, which
+ * relies on the "anyone can submit enquiries" RLS policy. Returns
+ * "not-writable" when neither credential is available or the anon attempt
+ * is rejected for authorisation reasons, so callers can treat it as
+ * setup-pending rather than a hard failure.
  */
 export async function dbInsertEnquiry(input: {
   name: string;
@@ -215,7 +291,9 @@ export async function dbInsertEnquiry(input: {
   preferredTime?: string | null;
   message?: string | null;
 }): Promise<EnquiryInsertResult> {
-  const cfg = env();
+  const svc = serviceEnv();
+  const anon = env();
+  const cfg = svc ?? anon;
   if (!cfg) return "not-writable";
 
   const headers: Record<string, string> = {
@@ -244,7 +322,10 @@ export async function dbInsertEnquiry(input: {
       ]),
     });
     if (res.ok) return "stored";
-    if (res.status === 401 || res.status === 403) return "not-writable";
+    // The service role bypasses RLS, so any rejection there is a real
+    // failure. The anon key depends on the insert policy being applied —
+    // an auth rejection there means setup is still pending.
+    if (!svc && (res.status === 401 || res.status === 403)) return "not-writable";
     return "error";
   } catch {
     return "error";
@@ -252,7 +333,9 @@ export async function dbInsertEnquiry(input: {
 }
 
 export async function dbListEnquiries(): Promise<Enquiry[] | null> {
-  const rows = await rest<
+  // Privileged: admin dashboard server components only (HMAC-gated). The
+  // anon key can never satisfy the admin-only select policy.
+  const rows = await adminRest<
     {
       id: string;
       name: string;
@@ -285,7 +368,8 @@ export async function dbUpdateEnquiryStatus(
   id: string,
   status: Enquiry["status"]
 ): Promise<boolean> {
-  const result = await rest<unknown>(
+  // Privileged (see dbListEnquiries): admin server actions only.
+  const result = await adminRest<unknown>(
     `enquiries?id=eq.${encodeURIComponent(id)}`,
     {
       method: "PATCH",
