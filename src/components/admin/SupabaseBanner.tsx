@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { isAdminDatabaseConfigured, isSupabaseConfigured } from "@/lib/supabase";
 
 /** Shared banner explaining the data backend state in admin screens. */
@@ -5,7 +6,10 @@ export function SupabaseBanner() {
   if (isAdminDatabaseConfigured()) {
     return (
       <div className="mb-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-        Connected to Supabase — changes are saved to the live database.
+        Connected to Supabase — changes are saved to the live database.{" "}
+        <Link href="/admin/diagnostics" className="font-semibold underline underline-offset-2 hover:opacity-80">
+          Run diagnostics
+        </Link>
       </div>
     );
   }
@@ -18,7 +22,10 @@ export function SupabaseBanner() {
           SUPABASE_SERVICE_ROLE_KEY
         </code>{" "}
         (Supabase dashboard → Settings → API). Add it to the environment and
-        restart the server to enable editing.
+        restart the server to enable editing.{" "}
+        <Link href="/admin/diagnostics" className="font-semibold underline underline-offset-2 hover:opacity-80">
+          Run diagnostics
+        </Link>
       </div>
     );
   }

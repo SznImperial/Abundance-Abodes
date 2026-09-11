@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Property } from "@/lib/types";
-import { dbDeleteProperty, dbUpsertProperty, isAdminDatabaseConfigured } from "@/lib/supabase";
+import { dbDeleteProperty, dbUpsertProperty, describeWriteError, isAdminDatabaseConfigured } from "@/lib/supabase";
 import { getAllProperties } from "@/lib/data";
 import { parsePropertyForm } from "@/lib/property-form";
 
@@ -40,8 +40,11 @@ export async function savePropertyAction(
   }
 
   const saved = await dbUpsertProperty(property);
-  if (!saved) {
-    return { error: "Could not save right now. Please try again." };
+  if (!saved.ok) {
+    // Surface the concrete reason (bad key vs schema mismatch) instead of a
+    // generic failure — and log it for the server/function logs too.
+    console.error("[admin] property save failed:", saved);
+    return { error: describeWriteError(saved) };
   }
 
   revalidatePath("/admin/properties");

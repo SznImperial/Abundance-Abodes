@@ -14,6 +14,7 @@ const links = [
   { href: "/admin/properties", label: "Properties" },
   { href: "/admin/enquiries", label: "Enquiries" },
   { href: "/admin/content", label: "Content" },
+  { href: "/admin/diagnostics", label: "Diagnostics" },
 ];
 
 export default async function AdminLayout({

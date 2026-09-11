@@ -61,6 +61,31 @@ export function isAdminDatabaseConfigured(): boolean {
   return serviceEnv() !== null;
 }
 
+/** Detailed outcome of a privileged write, so admin UI can explain failures. */
+export type WriteOutcome =
+  | { ok: true }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Turns a failed write into an admin-facing message. Shown only inside the
+ * password-protected dashboard, where the reader can act on it.
+ */
+export function describeWriteError(outcome: Extract<WriteOutcome, { ok: false }>): string {
+  if (outcome.status === 0) {
+    return `Could not reach the database: ${outcome.error}`;
+  }
+  if (outcome.status === 401 || outcome.status === 403) {
+    return "The database rejected the server credentials (HTTP 401/403). Check SUPABASE_SERVICE_ROLE_KEY in the environment (Supabase dashboard → Settings → API), then restart the server.";
+  }
+  if (outcome.status === 404) {
+    return "The table was not found (HTTP 404). Run supabase/schema.sql in the Supabase SQL editor, then try again.";
+  }
+  if (outcome.status === 400) {
+    return `The database refused the save — the live table likely differs from supabase/schema.sql (HTTP 400): ${outcome.error}`;
+  }
+  return `Could not save right now (HTTP ${outcome.status}): ${outcome.error}`;
+}
+
 async function adminRest<T>(
   path: string,
   init: RequestInit & { preferRepresentation?: boolean } = {}
@@ -92,6 +117,61 @@ async function adminRest<T>(
   } catch {
     return null;
   }
+}
+
+/**
+ * Privileged write that preserves the failure reason instead of swallowing
+ * it, so the admin UI can tell "bad key" apart from "schema mismatch".
+ */
+async function adminWrite(
+  path: string,
+  init: RequestInit
+): Promise<WriteOutcome> {
+  const cfg = serviceEnv();
+  if (!cfg) {
+    return {
+      ok: false,
+      status: 0,
+      error: "SUPABASE_SERVICE_ROLE_KEY is not configured on the server.",
+    };
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${cfg.url}/rest/v1/${path}`, {
+      ...init,
+      headers: {
+        apikey: cfg.key,
+        Authorization: `Bearer ${cfg.key}`,
+        "Content-Type": "application/json",
+        ...((init.headers as Record<string, string> | undefined) ?? {}),
+      },
+      cache: "no-store",
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      status: 0,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+
+  if (res.ok) return { ok: true };
+
+  const body = await res.text().catch(() => "");
+  let detail = body || res.statusText;
+  try {
+    const parsed = JSON.parse(body) as {
+      message?: string;
+      error?: string;
+      hint?: string | null;
+    };
+    detail = parsed.message || parsed.error || body;
+    if (parsed.hint) detail += ` (${parsed.hint})`;
+  } catch {
+    // Keep the raw body.
+  }
+  return { ok: false, status: res.status, error: detail.slice(0, 300) };
 }
 
 async function rest<T>(
@@ -211,7 +291,7 @@ export async function dbGetProperty(
   return rowToProperty(rows[0]);
 }
 
-export async function dbUpsertProperty(property: Property): Promise<boolean> {
+export async function dbUpsertProperty(property: Property): Promise<WriteOutcome> {
   const row = {
     id: property.id,
     slug: property.slug,
@@ -249,22 +329,19 @@ export async function dbUpsertProperty(property: Property): Promise<boolean> {
   // Privileged: called only from the admin server actions, which verify the
   // HMAC session cookie first. The anon key can never satisfy the
   // admin-only RLS policies, so this uses the service role (bypasses RLS).
-  const result = await adminRest<unknown>(`properties`, {
+  const outcome = await adminWrite(`properties`, {
     method: "POST",
     body: JSON.stringify([row]),
-    preferRepresentation: true,
     headers: { Prefer: "resolution=merge-duplicates,return=representation" },
   });
-  return result !== null;
+  return outcome;
 }
 
-export async function dbDeleteProperty(id: string): Promise<boolean> {
+export async function dbDeleteProperty(id: string): Promise<WriteOutcome> {
   // Privileged (see dbUpsertProperty): admin server actions only.
-  const result = await adminRest<unknown>(
-    `properties?id=eq.${encodeURIComponent(id)}`,
-    { method: "DELETE" }
-  );
-  return result !== null;
+  return adminWrite(`properties?id=eq.${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -367,15 +444,11 @@ export async function dbListEnquiries(): Promise<Enquiry[] | null> {
 export async function dbUpdateEnquiryStatus(
   id: string,
   status: Enquiry["status"]
-): Promise<boolean> {
+): Promise<WriteOutcome> {
   // Privileged (see dbListEnquiries): admin server actions only.
-  const result = await adminRest<unknown>(
-    `enquiries?id=eq.${encodeURIComponent(id)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ status }),
-      preferRepresentation: true,
-    }
-  );
-  return result !== null;
+  return adminWrite(`enquiries?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+    headers: { Prefer: "return=representation" },
+  });
 }
